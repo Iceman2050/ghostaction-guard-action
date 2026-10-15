@@ -1,3 +1,5 @@
+[![AI Security Score](https://ingeniousai-security-checks.netlify.app/badges/ghostaction-guard-action.svg)](https://ingeniousai-security-checks.netlify.app/ai-security-badge.html)
+
 # GhostAction Guard — free GitHub Action
 
 Scans your GitHub Actions workflows for **malicious CI injection** in the
