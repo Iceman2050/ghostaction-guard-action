@@ -1,0 +1,58 @@
+name: 'GhostAction Guard'
+description: >-
+  Scan GitHub Actions workflows for malicious CI injection in the style of
+  the Oct 2026 GhostAction supply-chain campaign (~1,900 accounts, 30k+
+  repos targeted via deceptive 'security-audit.yml' workflows exfiltrating
+  secrets). Free, stdlib-only, no network calls.
+author: 'Ingenious AI'
+branding:
+  icon: 'shield'
+  color: 'red'
+
+inputs:
+  fail-on:
+    description: >-
+      Fail the job when a finding at or above this severity exists
+      (critical | high | medium | low | never).
+    required: false
+    default: 'high'
+  working-directory:
+    description: 'Directory containing .github/workflows (usually the repo root).'
+    required: false
+    default: '.'
+  paths:
+    description: >-
+      Space-separated workflow files or directories to scan, relative to
+      working-directory.
+    required: false
+    default: '.github/workflows'
+
+outputs:
+  findings-json:
+    description: 'Full findings report as JSON.'
+    value: ${{ steps.scan.outputs.findings-json }}
+  finding-count:
+    description: 'Number of findings.'
+    value: ${{ steps.scan.outputs.finding-count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: scan
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        SCAN_PY="${{ github.action_path }}/scan.py"
+        OUT="$(mktemp)"
+        python3 "$SCAN_PY" ${{ inputs.paths }} \
+          --fail-on "${{ inputs.fail-on }}" \
+          --format json --output "$OUT"
+        CODE=$?
+        {
+          echo "findings-json<<GHGUARD_EOF"
+          cat "$OUT"
+          echo "GHGUARD_EOF"
+          echo "finding-count=$(python3 -c "import json;print(sum(len(r['findings']) for r in json.load(open('$OUT'))['results']))")"
+        } >> "$GITHUB_OUTPUT"
+        rm -f "$OUT"
+        exit $CODE
