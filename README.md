@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: YOUR-USERNAME/ghostaction-guard-action@v1
+      - uses: Iceman2050/ghostaction-guard-action@v1
         with:
           fail-on: high   # critical | high | medium | low | never
 ```
