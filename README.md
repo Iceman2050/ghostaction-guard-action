@@ -94,6 +94,29 @@ python3 scan.py workflow.yml --format json --output report.json
 
 MIT © 2026 Ingenious AI. See [LICENSE](LICENSE).
 
+## How to read a result
+
+- A **finding** is a *confirmed* match of a documented GhostAction-class
+  pattern in a workflow file — file and line are reported.
+- **Zero findings** means *not detected by these 8 rules*: other CI
+  supply-chain attacks exist, and a clean scan is not a proof that a
+  workflow is safe.
+- Files that cannot be read or parsed are reported, not silently skipped.
+
+## Go further
+
+This Action guards one repository's workflows. Ingenious AI's hosted side
+— [Agent Control](https://getingeniousai.com/agent-control) — extends the
+same discipline to AI agents themselves: authorization, spend caps,
+approval queues and tamper-evident evidence for what your agents do in
+production.
+
+## Project status
+
+Maintained by **Ingenious AI** · License: MIT (see [LICENSE](LICENSE)) ·
+Last validated: 2026-11-10 · Security policy: [SECURITY.md](SECURITY.md) ·
+Contributions: [CONTRIBUTING.md](CONTRIBUTING.md)
+
 ## Built by Ingenious AI
 
 This project is part of the **Ingenious AI** platform suite — defensive security tooling for the AI era. Our platforms are currently in early access (full launch Nov 1) — request access to any of them on WhatsApp:
