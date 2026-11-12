@@ -1,9 +1,7 @@
 name: 'GhostAction Guard'
 description: >-
-  Scan GitHub Actions workflows for malicious CI injection in the style of
-  the Oct 2026 GhostAction supply-chain campaign (~1,900 accounts, 30k+
-  repos targeted via deceptive 'security-audit.yml' workflows exfiltrating
-  secrets). Free, stdlib-only, no network calls.
+    Scan GitHub Actions workflows for malicious CI injection from GhostAction
+  campaign. 8 detection rules, zero dependencies.
 author: 'Ingenious AI'
 branding:
   icon: 'shield'
